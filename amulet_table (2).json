@@ -1,0 +1,31 @@
+package com.example.amuletmod;
+
+import com.example.amuletmod.event.AmuletEvents;
+import com.example.amuletmod.registry.ModBlockEntities;
+import com.example.amuletmod.registry.ModBlocks;
+import com.example.amuletmod.registry.ModItems;
+import com.example.amuletmod.registry.ModScreenHandlers;
+import net.fabricmc.api.ModInitializer;
+import net.minecraft.util.Identifier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+public class AmuletMod implements ModInitializer {
+    public static final String MOD_ID = "amuletmod";
+    public static final Logger LOGGER = LoggerFactory.getLogger(MOD_ID);
+
+    public static Identifier id(String path) {
+        return new Identifier(MOD_ID, path);
+    }
+
+    @Override
+    public void onInitialize() {
+        LOGGER.info("Loading Amulet Mod...");
+        ModItems.register();
+        ModBlocks.register();
+        ModBlockEntities.register();
+        ModScreenHandlers.register();
+        AmuletEvents.register();
+        LOGGER.info("Amulet Mod loaded!");
+    }
+}

@@ -1,0 +1,46 @@
+package com.example.amuletmod.mixin;
+
+import com.example.amuletmod.item.AmuletData;
+import com.example.amuletmod.item.AmuletItem;
+import com.example.amuletmod.item.TotemAmuletItem;
+import com.example.amuletmod.registry.ModItems;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.screen.AnvilScreenHandler;
+import net.minecraft.screen.ForgingScreenHandler;
+import net.minecraft.screen.Property;
+import org.spongepowered.asm.mixin.Mixin;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+@Mixin(AnvilScreenHandler.class)
+public abstract class AnvilCraftMixin extends ForgingScreenHandler {
+
+    @Shadow public int repairItemUsage;
+    @Shadow private int levelCost;
+
+    public AnvilCraftMixin(net.minecraft.screen.ScreenHandlerType<?> t, int s,
+                           net.minecraft.entity.player.PlayerInventory i,
+                           net.minecraft.screen.ScreenHandlerContext c) {
+        super(t, s, i, c);
+    }
+
+    @Inject(method = "updateResult", at = @At("HEAD"), cancellable = true)
+    private void amuletmod$craftTotemAmulet(CallbackInfo ci) {
+        ItemStack left = this.input.getStack(0);
+        ItemStack right = this.input.getStack(1);
+
+        if (left.getItem() instanceof AmuletItem && !(left.getItem() instanceof TotemAmuletItem)
+                && right.isOf(Items.TOTEM_OF_UNDYING)) {
+            ItemStack out = new ItemStack(ModItems.TOTEM_AMULET);
+            // copy all upgrade levels
+            AmuletData.copyStats(left, out);
+            this.output.setStack(0, out);
+            this.levelCost = 5;
+            this.sendContentUpdates();
+            ci.cancel();
+        }
+    }
+}

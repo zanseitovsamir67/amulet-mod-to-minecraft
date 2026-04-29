@@ -1,0 +1,137 @@
+package com.example.amuletmod.event;
+
+import com.example.amuletmod.item.AmuletData;
+import com.example.amuletmod.item.AmuletItem;
+import com.example.amuletmod.item.TotemAmuletItem;
+import net.fabricmc.fabric.api.entity.event.v1.ServerLivingEntityEvents;
+import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
+import net.minecraft.entity.attribute.EntityAttribute;
+import net.minecraft.entity.attribute.EntityAttributeInstance;
+import net.minecraft.entity.attribute.EntityAttributeModifier;
+import net.minecraft.entity.attribute.EntityAttributes;
+import net.minecraft.entity.effect.StatusEffectInstance;
+import net.minecraft.entity.effect.StatusEffects;
+import net.minecraft.entity.player.HungerManager;
+import net.minecraft.item.ItemStack;
+import net.minecraft.particle.ParticleTypes;
+import net.minecraft.server.network.ServerPlayerEntity;
+import net.minecraft.sound.SoundEvents;
+import net.minecraft.util.math.Vec3d;
+
+import java.util.UUID;
+
+public class AmuletEvents {
+
+    private static final UUID UUID_SPEED  = UUID.fromString("a1111111-1111-1111-1111-111111111111");
+    private static final UUID UUID_DAMAGE = UUID.fromString("a2222222-2222-2222-2222-222222222222");
+    private static final UUID UUID_ARMOR  = UUID.fromString("a3333333-3333-3333-3333-333333333333");
+    private static final UUID UUID_HP     = UUID.fromString("a4444444-4444-4444-4444-444444444444");
+    private static final UUID UUID_ATKSPD = UUID.fromString("a6666666-6666-6666-6666-666666666666");
+
+    public static void register() {
+        ServerTickEvents.END_SERVER_TICK.register(server -> {
+            for (ServerPlayerEntity player : server.getPlayerManager().getPlayerList()) {
+                tickPlayer(player);
+            }
+        });
+
+        ServerLivingEntityEvents.ALLOW_DEATH.register((entity, source, amount) -> {
+            if (entity instanceof ServerPlayerEntity player) {
+                ItemStack offhand = player.getOffHandStack();
+                ItemStack mainhand = player.getMainHandStack();
+                ItemStack totem = null;
+                if (offhand.getItem() instanceof TotemAmuletItem) totem = offhand;
+                else if (mainhand.getItem() instanceof TotemAmuletItem) totem = mainhand;
+
+                if (totem != null && TotemAmuletItem.isReady(totem, player.getWorld().getTime())) {
+                    player.setHealth(1.0F);
+                    player.clearStatusEffects();
+                    player.addStatusEffect(new StatusEffectInstance(StatusEffects.REGENERATION, 900, 1));
+                    player.addStatusEffect(new StatusEffectInstance(StatusEffects.ABSORPTION, 100, 1));
+                    player.addStatusEffect(new StatusEffectInstance(StatusEffects.FIRE_RESISTANCE, 800, 0));
+                    player.getWorld().sendEntityStatus(player, (byte) 35);
+                    player.getServerWorld().playSound(null, player.getBlockPos(),
+                            SoundEvents.ITEM_TOTEM_USE, player.getSoundCategory(), 1.0F, 1.0F);
+                    TotemAmuletItem.triggerCooldown(totem, player.getWorld().getTime());
+                    return false; // cancel death
+                }
+            }
+            return true;
+        });
+    }
+
+    private static void tickPlayer(ServerPlayerEntity player) {
+        ItemStack offhand = player.getOffHandStack();
+        boolean hasAmulet = offhand.getItem() instanceof AmuletItem;
+
+        applyAttribute(player, EntityAttributes.GENERIC_MOVEMENT_SPEED, UUID_SPEED, "Amulet Speed",
+                hasAmulet ? AmuletData.getLevel(offhand, "speed") * 0.02 : 0,
+                EntityAttributeModifier.Operation.MULTIPLY_TOTAL);
+
+        applyAttribute(player, EntityAttributes.GENERIC_ATTACK_DAMAGE, UUID_DAMAGE, "Amulet Damage",
+                hasAmulet ? AmuletData.getLevel(offhand, "damage") * 0.5 : 0,
+                EntityAttributeModifier.Operation.ADDITION);
+
+        applyAttribute(player, EntityAttributes.GENERIC_ARMOR, UUID_ARMOR, "Amulet Armor",
+                hasAmulet ? AmuletData.getLevel(offhand, "armor") * 0.5 : 0,
+                EntityAttributeModifier.Operation.ADDITION);
+
+        applyAttribute(player, EntityAttributes.GENERIC_MAX_HEALTH, UUID_HP, "Amulet HP",
+                hasAmulet ? AmuletData.getLevel(offhand, "hp") * 2.0 : 0,
+                EntityAttributeModifier.Operation.ADDITION);
+
+        applyAttribute(player, EntityAttributes.GENERIC_ATTACK_SPEED, UUID_ATKSPD, "Amulet AtkSpd",
+                hasAmulet ? AmuletData.getLevel(offhand, "attack_speed") * 0.1 : 0,
+                EntityAttributeModifier.Operation.ADDITION);
+
+        if (!hasAmulet) return;
+
+        // Regeneration: heal 1 HP every (60 - level*2) ticks (min 10)
+        int regenLvl = AmuletData.getLevel(offhand, "regen");
+        if (regenLvl > 0) {
+            int interval = Math.max(10, 60 - regenLvl * 2);
+            if (player.getWorld().getTime() % interval == 0 && player.getHealth() < player.getMaxHealth()) {
+                player.heal(1.0F);
+            }
+        }
+
+        // Hunger reduction: tick saturation
+        int hungerLvl = AmuletData.getLevel(offhand, "hunger_reduction");
+        if (hungerLvl > 0 && player.getWorld().getTime() % 40 == 0) {
+            HungerManager hm = player.getHungerManager();
+            hm.add(0, hungerLvl * 0.05F);
+        }
+
+        // Range: applied via vanilla speed boost as proxy (true reach needs mixin / ReachAttributes mod)
+        int rangeLvl = AmuletData.getLevel(offhand, "range");
+        if (rangeLvl > 0 && player.getWorld().getTime() % 60 == 0) {
+            // give brief Haste so range upgrade still feels present until you add reach mixin
+            player.addStatusEffect(new StatusEffectInstance(StatusEffects.HASTE, 80, Math.min(2, rangeLvl / 5), true, false, false));
+        }
+
+        // Overpowered side-effect: at high regen lvl > 10, drains hunger periodically
+        if (regenLvl > 10 && player.getWorld().getTime() % 200 == 0) {
+            int extra = regenLvl - 10;
+            player.getHungerManager().addExhaustion(0.5F * extra);
+            Vec3d pos = player.getPos();
+            player.getServerWorld().spawnParticles(ParticleTypes.ANGRY_VILLAGER,
+                    pos.x, pos.y + 1.5, pos.z, 1, 0, 0, 0, 0);
+        }
+    }
+
+    private static void applyAttribute(ServerPlayerEntity player, EntityAttribute attr,
+                                       UUID uuid, String name, double value,
+                                       EntityAttributeModifier.Operation op) {
+        EntityAttributeInstance inst = player.getAttributeInstance(attr);
+        if (inst == null) return;
+        EntityAttributeModifier existing = inst.getModifier(uuid);
+        if (value == 0) {
+            if (existing != null) inst.removeModifier(uuid);
+            return;
+        }
+        if (existing == null || existing.getValue() != value) {
+            if (existing != null) inst.removeModifier(uuid);
+            inst.addPersistentModifier(new EntityAttributeModifier(uuid, name, value, op));
+        }
+    }
+}

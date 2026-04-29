@@ -1,0 +1,13 @@
+package com.example.amuletmod.client;
+
+import com.example.amuletmod.registry.ModScreenHandlers;
+import com.example.amuletmod.screen.AmuletTableScreen;
+import net.fabricmc.api.ClientModInitializer;
+import net.minecraft.client.gui.screen.ingame.HandledScreens;
+
+public class AmuletModClient implements ClientModInitializer {
+    @Override
+    public void onInitializeClient() {
+        HandledScreens.register(ModScreenHandlers.AMULET_TABLE, AmuletTableScreen::new);
+    }
+}

@@ -1,0 +1,69 @@
+package com.example.amuletmod.block;
+
+import com.example.amuletmod.screen.AmuletTableScreenHandler;
+import net.minecraft.block.Block;
+import net.minecraft.block.BlockEntityProvider;
+import net.minecraft.block.BlockState;
+import net.minecraft.block.entity.BlockEntity;
+import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.inventory.Inventory;
+import net.minecraft.item.ItemStack;
+import net.minecraft.screen.NamedScreenHandlerFactory;
+import net.minecraft.screen.ScreenHandler;
+import net.minecraft.screen.ScreenHandlerContext;
+import net.minecraft.screen.SimpleNamedScreenHandlerFactory;
+import net.minecraft.text.Text;
+import net.minecraft.util.ActionResult;
+import net.minecraft.util.Hand;
+import net.minecraft.util.hit.BlockHitResult;
+import net.minecraft.util.math.BlockPos;
+import net.minecraft.world.World;
+import org.jetbrains.annotations.Nullable;
+
+public class AmuletTableBlock extends Block implements BlockEntityProvider {
+
+    public AmuletTableBlock(Settings settings) {
+        super(settings);
+    }
+
+    @Override
+    public ActionResult onUse(BlockState state, World world, BlockPos pos,
+                              PlayerEntity player, Hand hand, BlockHitResult hit) {
+        if (!world.isClient) {
+            BlockEntity be = world.getBlockEntity(pos);
+            if (be instanceof AmuletTableBlockEntity table) {
+                NamedScreenHandlerFactory factory = new SimpleNamedScreenHandlerFactory(
+                        (syncId, inv, p) -> new AmuletTableScreenHandler(
+                                syncId, inv, table, ScreenHandlerContext.create(world, pos)),
+                        Text.translatable("block.amuletmod.amulet_table")
+                );
+                player.openHandledScreen(factory);
+            }
+        }
+        return ActionResult.SUCCESS;
+    }
+
+    @Override
+    public void onStateReplaced(BlockState state, World world, BlockPos pos,
+                                BlockState newState, boolean moved) {
+        if (!state.isOf(newState.getBlock())) {
+            BlockEntity be = world.getBlockEntity(pos);
+            if (be instanceof Inventory inv) {
+                // drop items inside
+                for (int i = 0; i < inv.size(); i++) {
+                    ItemStack stack = inv.getStack(i);
+                    if (!stack.isEmpty()) {
+                        Block.dropStack(world, pos, stack);
+                    }
+                }
+            }
+            super.onStateReplaced(state, world, pos, newState, moved);
+        }
+    }
+
+    @Nullable
+    @Override
+    public BlockEntity createBlockEntity(BlockPos pos, BlockState state) {
+        return new AmuletTableBlockEntity(pos, state);
+    }
+}
